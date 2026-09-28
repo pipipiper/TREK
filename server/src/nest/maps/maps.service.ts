@@ -2103,6 +2103,18 @@ export class MapsService {
     // the same question twice. `null` means it never ran.
     let osmAnswer: Record<string, unknown>[] | null = null;
 
+    // Amap in the slot Google otherwise holds, asked FIRST rather than after
+    // the index. A Chinese query always finds SOMETHING in the global index,
+    // which hid Amap's far richer local answer behind it — and the OpenStreetMap
+    // call the index path makes alongside costs a Nominatim round trip that, on
+    // the networks Amap exists for, is a full timeout. An EMPTY answer falls
+    // through to the index as before; an error still propagates, because a bad
+    // key or an exhausted quota is something the operator has to see.
+    if (keyed?.id === 'amap') {
+      const places = await keyed.provider.searchText(query, lang, locationBias);
+      if (places.length > 0) return { places, source: 'amap' };
+    }
+
     // A search sent to Google on purpose, or the admin's "Google only" switch,
     // skips the pair the same way: the search then reads exactly as it did
     // before 4.3.0 on an install with a key.
@@ -2149,13 +2161,6 @@ export class MapsService {
           : 'openstreetmap';
         return { places, source };
       }
-    }
-
-    // Amap in the slot Google otherwise holds: asked only once the index and
-    // OpenStreetMap came back empty, exactly like the Google call below.
-    if (keyed?.id === 'amap') {
-      const places = await keyed.provider.searchText(query, lang, locationBias);
-      return { places, source: 'amap' };
     }
 
     if (!apiKey) {
@@ -2240,6 +2245,15 @@ export class MapsService {
     const keyed = this.keyedProvider(userId);
     const { key: apiKey, source: keySource } = keyed?.id === 'google' ? keyed : { key: null, source: null };
 
+    // Amap first, same reasoning as searchPlaces: inputtips answers two
+    // characters with the POIs a Chinese user actually means, while the global
+    // index alone answers with whatever its dataset happens to hold. An empty
+    // answer falls through to the index; an error still surfaces.
+    if (keyed?.id === 'amap') {
+      const suggestions = await keyed.provider.autocomplete(input, lang, locationBias);
+      if (suggestions.length > 0) return { suggestions, source: 'amap' };
+    }
+
     // This is the path that mattered most. Nominatim's usage policy names
     // autocomplete as unacceptable use in its own words, regardless of rate,
     // and the whole TREK fleet shares one User-Agent there: one abusive install
@@ -2315,11 +2329,6 @@ export class MapsService {
       } catch (err: unknown) {
         console.warn('TREK Places autocomplete failed, falling back:', (err as Error).message);
       }
-    }
-
-    if (keyed?.id === 'amap') {
-      const suggestions = await keyed.provider.autocomplete(input, lang, locationBias);
-      return { suggestions, source: 'amap' };
     }
 
     if (!apiKey) {

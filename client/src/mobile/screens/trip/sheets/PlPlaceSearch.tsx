@@ -23,6 +23,13 @@ export interface PlSearchPick {
   amap_poi_id?: string
   website?: string
   phone?: string
+  /**
+   * The full record the pick came from. mergeResult ignores unknown keys, so
+   * this rides along for free, and the details block hands it to the server so
+   * the enrichment call can skip its own details lookup — one fewer provider
+   * round trip on a phone network.
+   */
+  details?: MapsPlace
 }
 
 interface Suggestion {
@@ -72,6 +79,7 @@ function placeToPick(place: MapsPlace): PlSearchPick {
     amap_poi_id: s(place.amap_poi_id),
     website: s(place.website),
     phone: s(place.phone),
+    details: place,
   }
 }
 

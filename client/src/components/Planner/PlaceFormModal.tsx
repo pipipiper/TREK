@@ -922,10 +922,11 @@ export default function PlaceFormModal(props: PlaceFormModalProps) {
   // Desktop + Collections addon → the saved-place picker on the right. Mobile
   // always keeps the original single-column form untouched.
   const twoColumn = !isMobile && collectionsEnabled
-  // The detail column sits on the left on desktop whenever enrichment is on. It
+  // The detail column sits on the left on desktop whenever enrichment is on; on
+  // mobile it stacks above the form (the aside is w-full below sm already). It
   // stays mounted with the selection null rather than appearing on the first
   // pick — otherwise the dialog would jump sideways mid-typing.
-  const showDetails = !isMobile && placesEnrichEnabled
+  const showDetails = placesEnrichEnabled
   const modalSize = isMobile ? 'lg' : showDetails && twoColumn ? '5xl' : showDetails || twoColumn ? '4xl' : 'lg'
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
   const notesRef = useRef<HTMLTextAreaElement | null>(null)
@@ -957,7 +958,7 @@ export default function PlaceFormModal(props: PlaceFormModalProps) {
         </div>
       }
     >
-      <div className={twoColumn || showDetails ? 'flex gap-5 items-stretch' : ''}>
+      <div className={twoColumn || showDetails ? (isMobile ? 'flex flex-col gap-5' : 'flex gap-5 items-stretch') : ''}>
       {showDetails && (
         <PlaceDetailsColumn
           selection={detailsSelection}

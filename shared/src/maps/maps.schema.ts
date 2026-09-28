@@ -144,7 +144,7 @@ export type MapsResolveUrlResult = z.infer<typeof mapsResolveUrlResultSchema>;
  * Everything nullable is genuinely optional per source — Commons gives us a
  * licence and an author, Google gives us neither in a form we may reproduce.
  */
-export const placePhotoSourceSchema = z.enum(['google', 'wikimedia', 'wikipedia', 'cached']);
+export const placePhotoSourceSchema = z.enum(['google', 'wikimedia', 'wikipedia', 'cached', 'amap']);
 export type PlacePhotoSource = z.infer<typeof placePhotoSourceSchema>;
 
 export const placePhotoCandidateSchema = z.object({
@@ -215,6 +215,8 @@ export const placeFactKindSchema = z.enum([
   'vegetarian',
   'vegan',
   'internetAccess',
+  'phone',
+  'cost',
 ]);
 export type PlaceFactKind = z.infer<typeof placeFactKindSchema>;
 

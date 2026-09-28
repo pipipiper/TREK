@@ -131,6 +131,9 @@ describe('PlPlaceSearch', () => {
       osm_id: 'W7444,',
       website: 'https://louvre.fr',
       phone: '+33 1',
+      // The full record rides along so the details block can hand it to the
+      // enrichment call and skip the server's own details lookup.
+      details: LOUVRE,
     })
     expect(input).toHaveValue('')
   })
