@@ -3,6 +3,7 @@
 # Go stdlib (Debian's apt gosu is built with an old Go that trips CVE scanners).
 # The binary and its runtime behaviour are identical to the apt package.
 FROM golang:1.26-alpine AS gosu-build
+ENV GOPROXY=https://goproxy.cn,direct
 # Pinned to the commit of gosu's 1.19 tag: @latest made every build pick up whatever
 # was pushed last, and the tag itself is not a semver version go install accepts.
 RUN CGO_ENABLED=0 GOBIN=/out go install github.com/tianon/gosu@6456aaa0f3c854d199d0f037f068eb97515b7513
@@ -70,7 +71,7 @@ COPY server/package.json ./server/
 # gypfile:false (npm/cli#9837). The only other install scripts among the runtime
 # deps are esbuild's binary check, redundant next to its optional platform
 # package, and a telemetry ping.
-RUN apt-get update && \
+RUN sed -i "s|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; s|security.debian.org|mirrors.tuna.tsinghua.edu.cn|g" /etc/apt/sources.list.d/debian.sources && apt-get update && \
     apt-get install -y --no-install-recommends tzdata dumb-init wget ca-certificates \
     libkitinerary-bin libsqlite3-0 && \
     npm ci --workspace=server --omit=dev --ignore-scripts && \

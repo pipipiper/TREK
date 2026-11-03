@@ -7,12 +7,14 @@ import {
   ChefHat,
   ChevronDown,
   ChevronUp,
+  CircleDollarSign,
   Clock,
   ExternalLink,
   ImageIcon,
   Landmark,
   Leaf,
   Loader2,
+  Phone,
   ScrollText,
   SearchX,
   ShoppingBag,
@@ -536,6 +538,8 @@ const FACT_ICONS: Record<PlaceFact['kind'], typeof ChefHat> = {
   wheelchair: Accessibility,
   vegetarian: Leaf,
   vegan: Sprout,
+  phone: Phone,
+  cost: CircleDollarSign,
   internetAccess: Wifi,
 }
 

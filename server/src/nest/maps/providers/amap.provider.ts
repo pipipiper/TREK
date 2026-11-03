@@ -22,11 +22,11 @@
  *     otherwise the controller's error mapping would report every failure as an
  *     empty result.
  *
- * No picture comes out of this provider. Amap's POI photos carry no licence
- * statement we could show a user, and the Wikimedia fallback the place-details
- * column already uses produces a picture *with* its attribution. An
- * unattributable image is worse than no image, so an Amap place gets its picture
- * the same way a place found on OpenStreetMap does.
+ * Photos travel as URL candidates only: the bytes are fetched through the
+ * enrichment service's SSRF-checked path and served from the local photo
+ * cache, never hot-linked by the client. Amap's POI photos are user uploads
+ * without a stated licence, so the credit line names Amap as their source
+ * rather than claiming terms nobody granted.
  */
 import { readEnv } from '../../../app-config';
 import { discardBody, exceedsDeclaredLength, readCappedJson } from '../../../utils/cappedFetch';
@@ -183,8 +183,9 @@ interface AmapPoi {
   type?: string;
   tel?: unknown;
   website?: unknown;
+  photos?: unknown;
   biz_ext?: { rating?: unknown; open_time?: unknown };
-  business?: { rating?: unknown; tel?: unknown; opentime_week?: unknown; opentime_today?: unknown };
+  business?: { rating?: unknown; tel?: unknown; cost?: unknown; opentime_week?: unknown; opentime_today?: unknown };
 }
 
 /**
@@ -398,6 +399,18 @@ export class AmapPlacesProvider implements PlacesProvider {
       .filter((part, i, all) => part && all.indexOf(part) === i);
     const address = [...region, street].filter(Boolean).join('');
     const openText = amapText(business.opentime_week) || amapText(bizExt.open_time);
+    // Photo URLs travel with the place so the enrichment column can offer them
+    // as candidates. v3 search returns them under extensions=all; v5 detail
+    // returns them when show_fields asks for `photos`. The enrichment fetches
+    // the bytes through its own SSRF-checked path and serves them from the
+    // local photo cache, so these URLs never reach a client. The pictures are
+    // Amap user uploads without a stated licence, so the credit line names
+    // Amap as their source rather than claiming terms nobody granted.
+    const photoUrls = asArray(poi.photos as { url?: unknown }[] | undefined)
+      .map((photo) => (photo && typeof photo === 'object' ? amapText(photo.url) : ''))
+      .filter((url) => /^https?:\/\//.test(url))
+      .slice(0, 5);
+
     // Amap phrases hours in Chinese. Translated, the shared OSM-dialect parser
     // reads them; text the translation cannot fully read gives no hours at all,
     // so the enrichment can fall back to OpenStreetMap's.
@@ -418,6 +431,9 @@ export class AmapPlacesProvider implements PlacesProvider {
       // Free text, often a bare host: it gains https here like any other source's.
       website: normalizePlaceWebsite(amapText(poi.website)),
       phone: amapText(business.tel ?? poi.tel) || null,
+      // Per-capita spend in CNY, where Amap tracks it (restaurants mostly).
+      cost: amapNumber(business.cost),
+      photo_urls: photoUrls.length ? photoUrls : null,
       // Amap's type is a slash-separated taxonomy ("餐饮服务;中餐厅;川菜"); split so
       // it reads like the string array every other provider returns.
       types: amapText(poi.type)
@@ -519,12 +535,13 @@ export class AmapPlacesProvider implements PlacesProvider {
     // v5 rather than v3: v3's place/detail is deprecated and does not return the
     // business block (rating, phone, opening hours) that makes a details lookup
     // worth making. `show_fields` is v5's field mask — asking for everything
-    // costs no more, but photos are left out on purpose (see the file header).
+    // costs no more. Photos ARE asked for: the enrichment column offers them as
+    // candidates credited to Amap (see toPlace for the licensing note).
     const data = await this.call<AmapEnvelope & { pois?: AmapPoi[] }>(
       '/v5/place/detail',
       {
         id: poiId,
-        show_fields: 'business,indoor',
+        show_fields: 'business,indoor,photos',
         language: toAmapLang(lang),
       },
       `place/detail(${poiId})`,

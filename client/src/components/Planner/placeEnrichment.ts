@@ -62,7 +62,7 @@ function writeSession(key: string, value: Stored): void {
  * without it the tab that was open while the fix shipped keeps replaying the
  * answer the fix was about — and reports it as still broken.
  */
-const ENRICH_CACHE_V = 5;
+const ENRICH_CACHE_V = 6;
 
 export function cacheKeyFor(selection: PlaceDetailsSelection, language: string): string {
   const id = selection.placeId || `coords:${selection.lat}:${selection.lng}`;

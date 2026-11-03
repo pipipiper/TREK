@@ -625,7 +625,7 @@ describe('collectDescription', () => {
 describe('result cache', () => {
   // v is the cache format version; an entry written before a release that
   // changes the shape or the sources is discarded rather than served.
-  const cachedRow = (photos: unknown[], fetchedAt = Date.now(), v: number | undefined = 4) => ({
+  const cachedRow = (photos: unknown[], fetchedAt = Date.now(), v: number | undefined = 6) => ({
     payload_json: JSON.stringify({ photos, description: null, facts: [], v }),
     fetched_at: fetchedAt,
   });

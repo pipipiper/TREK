@@ -24,6 +24,7 @@ import { GooglePlacesClient } from '../maps/providers/google-places.provider';
 import { OsmClient } from '../maps/providers/osm.client';
 import { WikimediaClient } from '../maps/providers/wikimedia.client';
 import { communityKeyOf, TrekCommunityService } from '../maps/trek-community.service';
+import { isAmapPlaceId } from '../maps/providers/amap.provider';
 import { trekPlacesById } from '../maps/trek-places.client';
 import { PlacePhotoCacheService } from '../place-photos/place-photo-cache.service';
 import { InjectRepository } from '@mikro-orm/nestjs';
@@ -51,6 +52,8 @@ import { createHash } from 'node:crypto';
  */
 const COMMONS_CAP = 5;
 const GOOGLE_CAP = 3;
+/** Amap pictures come from the same details payload, so they cost no call; three matches the Google strip. */
+const AMAP_CAP = 3;
 
 // A photo from Wikimedia or another third-party URL the place data names: the
 // same ceiling the maps photo proxy holds Wikimedia to, and a deadline so a
@@ -87,7 +90,7 @@ function hasAnything(value: CachedEnrichment): boolean {
  * from before the change — which is exactly what happened when the facts and
  * Wikivoyage landed.
  */
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 6;
 
 /**
  * Cache key for one candidate picture. Deliberately not a bare place id.
@@ -289,6 +292,17 @@ export function collectFacts(details: Record<string, unknown> | null): PlaceFact
   // flattening seven lines into one string produced "Monday: 11:30 AM – 11:00 PM
   // · Tuesday:…" truncated mid-word. Both now travel as their own fields.
 
+  // Amap's contribution: a phone number and, for restaurants, the per-capita
+  // spend — practical facts of exactly the kind this list exists for, which
+  // arrive with the details lookup like the OSM tags below.
+  if (details.source === 'amap') {
+    const phone = typeof details.phone === 'string' ? details.phone.trim() : '';
+    if (phone) push('phone', phone);
+    const cost = typeof details.cost === 'number' ? details.cost : null;
+    if (cost != null && cost > 0) push('cost', `¥${cost}/人`);
+    return facts;
+  }
+
   // Everything below is OpenStreetMap tagging and has no Google equivalent.
   if (details.source !== 'openstreetmap') return facts;
 
@@ -425,7 +439,13 @@ export class PlaceEnrichmentService {
     // comes along with the request. Refetching cost 12.8 seconds on a large
     // OSM relation, and it ran in parallel with the client's own lookup.
     const details = req.details ?? (communityPlace ? early : await this.readDetails(userId, placeId, lang));
-    const identity = await this.resolveIdentity(req, details);
+    // An Amap place skips the OSM identity lookup. What it resolves — Nominatim,
+    // and through the tags Wikimedia and Wikipedia — is unreachable from the
+    // networks Amap exists for, so for an Amap place the lookup only ever
+    // contributed its own timeout (2.5 s) to a dialog the user is watching.
+    const identity: PlaceIdentity = isAmapPlaceId(placeId)
+      ? { wikipedia: null, wikidata: null, wikimedia_commons: null, osmTags: null, brand: { wikidata: null, wikipedia: null } }
+      : await this.resolveIdentity(req, details);
 
     const [photos, description] = await Promise.all([
       this.collectPhotos(userId, placeId, req, identity, details),
@@ -547,6 +567,16 @@ export class PlaceEnrichmentService {
       ? this.googlePlaces.fetchGooglePhotoRefs(placeId, apiKey!, GOOGLE_CAP)
       : Promise.resolve([] as { name: string; attribution: string | null }[]);
 
+    // Amap's photo URLs ride along in the details payload the caller already
+    // holds (amap.provider.ts puts them there), so this costs no extra call.
+    // Like Google's they are pictures of the business itself, which is what the
+    // strip leads with. They can arrive from a client-supplied payload, so only
+    // plain http(s) URLs are taken; the fetch below re-checks every hop against
+    // the SSRF guard like any other remote picture.
+    const amapUrls = (Array.isArray(details?.photo_urls) ? (details.photo_urls as unknown[]) : [])
+      .filter((url): url is string => typeof url === 'string' && /^https?:\/\//.test(url))
+      .slice(0, AMAP_CAP);
+
     // The free ladder, in order of how much anyone vouched that the picture
     // shows THIS place:
     //   Wikidata  — a person attached this file to this exact object.
@@ -589,7 +619,11 @@ export class PlaceEnrichmentService {
     // Skipped outright for the categories where it misleads, rather than
     // fetched and then filtered: the request is the cost, and there is nothing
     // in the answer worth looking at for a cafe.
-    const skipNearby = nearbyWouldMislead(details) || nearbyWouldMislead(identity.osmTags);
+    // Skipped for Amap places as well: their pictures come from Amap itself,
+    // and Wikimedia is unreachable from the networks Amap serves, so the
+    // geosearch only ever contributed its 6 s timeout and no picture.
+    const skipNearby =
+      isAmapPlaceId(placeId) || nearbyWouldMislead(details) || nearbyWouldMislead(identity.osmTags);
     const nearbyPending =
       curated < 2 && !skipNearby
         ? this.wiki.fetchCommonsCandidates(req.lat, req.lng, COMMONS_CAP)
@@ -637,6 +671,22 @@ export class PlaceEnrichmentService {
           source: 'google' as const,
         },
         fetchBytes: () => this.googlePlaces.fetchGooglePhotoBytes(ref.name, apiKey!),
+      })),
+      ...amapUrls.map((photoUrl) => ({
+        identity: `amap:${photoUrl}`,
+        candidate: {
+          key: '',
+          url: '',
+          // Amap's POI photos are user uploads with no author and no stated
+          // licence attached, so the credit names where they came from rather
+          // than a person — the same treatment Google's authorless strip gets.
+          attribution: '高德地图',
+          license: null,
+          licenseUrl: null,
+          sourceUrl: null,
+          source: 'amap' as const,
+        },
+        fetchBytes: () => this.fetchRemoteBytes(photoUrl),
       })),
       ...ranked.map((pick) => ({
         identity: `commons:${pick.pageId ?? pick.photoUrl}`,
